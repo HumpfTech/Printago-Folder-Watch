@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Printago Folder Watch</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🗂️ Printago Folder Watch</h1>
+      <p class="subtitle">Automatically sync your files to Printago</p>
+    </header>
+
+    <main>
+      <section class="config-section">
+        <h2>Configuration</h2>
+
+        <div class="form-group">
+          <label for="watch-path">Watch Directory</label>
+          <div class="input-with-button">
+            <input type="text" id="watch-path" placeholder="Select a directory to watch..." readonly>
+            <button id="select-dir-btn" class="btn btn-secondary">Browse</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="api-url">Printago API URL</label>
+          <input type="url" id="api-url" placeholder="https://api.printago.com" required>
+        </div>
+
+        <div class="form-group">
+          <label for="api-key">API Key</label>
+          <input type="password" id="api-key" placeholder="Your Printago API key" required>
+        </div>
+
+        <div class="button-group">
+          <button id="save-config-btn" class="btn btn-primary">Save Configuration</button>
+          <button id="start-watch-btn" class="btn btn-success" disabled>Start Watching</button>
+          <button id="stop-watch-btn" class="btn btn-danger" disabled>Stop Watching</button>
+        </div>
+
+        <div id="status" class="status"></div>
+      </section>
+
+      <section class="activity-section">
+        <h2>Activity Log</h2>
+        <div id="activity-log" class="activity-log"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
