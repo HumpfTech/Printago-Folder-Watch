@@ -12,6 +12,7 @@ namespace PrintagoFolderWatch
         private ConfigForm configForm;
         private LogForm logForm;
         private StatusForm statusForm;
+        private UpdateChecker updateChecker;
 
         public TrayApplicationContext()
         {
@@ -57,6 +58,7 @@ namespace PrintagoFolderWatch
             var stopItem = new ToolStripMenuItem("Stop Watching") { Enabled = false };
             var configItem = new ToolStripMenuItem("Settings...");
             var logsItem = new ToolStripMenuItem("View Logs...");
+            var checkUpdateItem = new ToolStripMenuItem("Check for Updates...");
             var exitItem = new ToolStripMenuItem("Exit");
 
             trayIcon.ContextMenuStrip.Items.AddRange(new ToolStripItem[] {
@@ -66,6 +68,7 @@ namespace PrintagoFolderWatch
                 configItem,
                 logsItem,
                 new ToolStripSeparator(),
+                checkUpdateItem,
                 exitItem
             });
 
@@ -128,6 +131,13 @@ namespace PrintagoFolderWatch
                 Application.Exit();
             };
 
+            // Initialize update checker
+            updateChecker = new UpdateChecker();
+            checkUpdateItem.Click += async (s, e) =>
+            {
+                await updateChecker.CheckForUpdatesAsync(silentIfNoUpdate: false);
+            };
+
             // Auto-start if configured
             if (watcherService.Config.IsValid())
             {
@@ -141,6 +151,13 @@ namespace PrintagoFolderWatch
                     }
                 });
             }
+
+            // Check for updates on startup (after a short delay)
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(5000); // Wait 5 seconds before checking
+                await updateChecker.CheckForUpdatesAsync(silentIfNoUpdate: true);
+            });
         }
 
         private void ShowStatusForm()
