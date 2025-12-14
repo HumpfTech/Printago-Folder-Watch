@@ -11,7 +11,7 @@ namespace PrintagoFolderWatch
     public class UpdateChecker
     {
         private const string GITHUB_RELEASES_URL = "https://api.github.com/repos/HumpfTech/Printago-Folder-Watch/releases/latest";
-        private const string CURRENT_VERSION = "2.3"; // Update this with each release
+        private const string CURRENT_VERSION = "2.4"; // Update this with each release
 
         private readonly HttpClient httpClient;
 

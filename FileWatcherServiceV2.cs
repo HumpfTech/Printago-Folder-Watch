@@ -314,13 +314,25 @@ namespace PrintagoFolderWatch
                 Log($"  Sample folder: '{folder.FolderPath}' (ID: {folder.Id})", "DEBUG");
             }
 
-            // Build parts cache with paths
+            // Build parts cache with paths - ONLY include Parts inside "Local Folder Sync" folder
             remoteParts.Clear();
+            int skippedPartsOutsideSync = 0;
             foreach (var part in parts)
             {
                 var folderPath = part.folderId != null && folderIdToPath.ContainsKey(part.folderId)
                     ? folderIdToPath[part.folderId]
                     : "";
+
+                // IMPORTANT: Only manage Parts that are inside "Local Folder Sync" folder
+                // Skip all Parts in root or other folders - they are managed manually by user
+                bool isInsideLocalFolderSync = folderPath == ROOT_SYNC_FOLDER ||
+                                                folderPath.StartsWith($"{ROOT_SYNC_FOLDER}/");
+
+                if (!isInsideLocalFolderSync)
+                {
+                    skippedPartsOutsideSync++;
+                    continue; // Skip Parts outside "Local Folder Sync"
+                }
 
                 // Strip "Local Folder Sync" prefix to match local file keys
                 var normalizedFolderPath = folderPath;
@@ -351,6 +363,11 @@ namespace PrintagoFolderWatch
                 remoteParts.AddOrUpdate(partKey,
                     _ => new List<PartCache> { partCache },
                     (_, list) => { list.Add(partCache); return list; });
+            }
+
+            if (skippedPartsOutsideSync > 0)
+            {
+                Log($"✓ Skipped {skippedPartsOutsideSync} parts outside '{ROOT_SYNC_FOLDER}' (not managed by sync)", "INFO");
             }
 
             // Count total parts including duplicates
