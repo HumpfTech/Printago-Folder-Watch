@@ -2,7 +2,7 @@
 ; Inno Setup Script for .NET Application
 
 #define MyAppName "Printago Folder Watch"
-#define MyAppVersion "2.4"
+#define MyAppVersion "2.5"
 #define MyAppPublisher "Humpf Tech LLC"
 #define MyAppExeName "PrintagoFolderWatch.exe"
 

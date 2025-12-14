@@ -541,8 +541,7 @@ namespace PrintagoFolderWatch
             {
                 foreach (var file in Directory.GetFiles(dirPath))
                 {
-                    var ext = Path.GetExtension(file).ToLower();
-                    if (ext == ".3mf" || ext == ".stl")
+                    if (IsSupportedFile(file))
                     {
                         AddLocalFile(file);
                     }
@@ -1071,10 +1070,25 @@ namespace PrintagoFolderWatch
 
         #region File System Events
 
+        /// <summary>
+        /// Checks if a file is a supported 3D model format
+        /// Supported: .stl, .3mf, .gcode.3mf, .scad, .step, .stp
+        /// </summary>
+        private bool IsSupportedFile(string filePath)
+        {
+            var fileName = Path.GetFileName(filePath).ToLower();
+
+            // Check for .gcode.3mf (compound extension)
+            if (fileName.EndsWith(".gcode.3mf"))
+                return true;
+
+            var ext = Path.GetExtension(filePath).ToLower();
+            return ext == ".stl" || ext == ".3mf" || ext == ".scad" || ext == ".step" || ext == ".stp";
+        }
+
         private async void OnFileChanged(object sender, FileSystemEventArgs e)
         {
-            var ext = Path.GetExtension(e.FullPath).ToLower();
-            if (ext == ".3mf" || ext == ".stl")
+            if (IsSupportedFile(e.FullPath))
             {
                 // Debounce: ignore duplicate events within DEBOUNCE_MS
                 var now = DateTime.UtcNow;
@@ -1172,8 +1186,7 @@ namespace PrintagoFolderWatch
 
         private void OnFileDeleted(object sender, FileSystemEventArgs e)
         {
-            var ext = Path.GetExtension(e.FullPath).ToLower();
-            if (ext == ".3mf" || ext == ".stl")
+            if (IsSupportedFile(e.FullPath))
             {
                 var relativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
                 var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
@@ -1263,8 +1276,7 @@ namespace PrintagoFolderWatch
         private void OnFileRenamed(object sender, RenamedEventArgs e)
         {
             // Handle both file renames and folder renames (which affect all files inside)
-            var ext = Path.GetExtension(e.FullPath).ToLower();
-            if (ext == ".3mf" || ext == ".stl")
+            if (IsSupportedFile(e.FullPath))
             {
                 // File was renamed/moved
                 Log($"Detected rename: {e.OldName} → {e.Name}", "INFO");
