@@ -2,7 +2,7 @@
 ; Inno Setup Script for .NET Application
 
 #define MyAppName "Printago Folder Watch"
-#define MyAppVersion "2.0"
+#define MyAppVersion "2.1"
 #define MyAppPublisher "Humpf Tech LLC"
 #define MyAppExeName "PrintagoFolderWatch.exe"
 
@@ -23,6 +23,11 @@ PrivilegesRequired=admin
 UninstallDisplayIcon={app}\{#MyAppExeName}
 DisableProgramGroupPage=yes
 VersionInfoVersion={#MyAppVersion}
+; Upgrade settings - allow installing over existing version
+UsePreviousAppDir=yes
+CloseApplications=yes
+CloseApplicationsFilter=*.exe
+RestartApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -142,17 +147,41 @@ var
   Version: String;
   DotNetInstalled: Boolean;
   ResultCode: Integer;
+  IsUpgrade: Boolean;
 begin
   Result := True;
+  IsUpgrade := False;
 
   // Check if already installed
   if RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F4C3D2E-9B7A-4F1C-8E3D-5A6B7C8D9E0F}_is1', 'DisplayVersion', Version) then
   begin
-    if MsgBox('Printago Folder Watch version ' + Version + ' is already installed. Do you want to upgrade/reinstall?', mbConfirmation, MB_YESNO) = IDNO then
+    IsUpgrade := True;
+
+    // Compare versions
+    if Version = '{#MyAppVersion}' then
     begin
-      Result := False;
-      Exit;
+      if MsgBox('Printago Folder Watch version ' + Version + ' is already installed.' + #13#10 + #13#10 +
+                'Do you want to reinstall?', mbConfirmation, MB_YESNO) = IDNO then
+      begin
+        Result := False;
+        Exit;
+      end;
+    end
+    else
+    begin
+      if MsgBox('Printago Folder Watch version ' + Version + ' is currently installed.' + #13#10 + #13#10 +
+                'Do you want to upgrade to version {#MyAppVersion}?' + #13#10 + #13#10 +
+                'Your settings will be preserved.', mbConfirmation, MB_YESNO) = IDNO then
+      begin
+        Result := False;
+        Exit;
+      end;
     end;
+
+    // Close running instance before upgrade
+    Exec('taskkill', '/F /IM PrintagoFolderWatch.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // Give it a moment to fully close
+    Sleep(1000);
   end;
 
   // Check if .NET 9.0 Desktop Runtime is installed (with debug info)

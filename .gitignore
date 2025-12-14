@@ -50,3 +50,13 @@ dist/
 Thumbs.db
 Desktop.ini
 nul
+# Local Claude settings (contains sensitive data)
+.claude/settings.local.json
+_ul
+_ul-*
+# Claude Code settings
+.claude/
+# Temp files
+_ul
+_ul-*
+CLAUDE_NOTES.md

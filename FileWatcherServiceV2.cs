@@ -33,7 +33,7 @@ namespace PrintagoFolderWatch
         private bool isRunning = false;
 
         // Caches
-        private readonly ConcurrentDictionary<string, PartCache> remoteParts = new(); // key = "folderPath/partName"
+        private readonly ConcurrentDictionary<string, List<PartCache>> remoteParts = new(); // key = "folderPath/partName", value = list of parts (supports duplicates)
         private readonly ConcurrentDictionary<string, FolderCache> remoteFolders = new(); // key = folderPath
         private readonly ConcurrentDictionary<string, LocalFileInfo> localFiles = new();
         private readonly ConcurrentDictionary<string, UploadProgress> activeUploads = new();
@@ -45,6 +45,17 @@ namespace PrintagoFolderWatch
         // Key = file path, Value = (Part to delete, Time when deletion was requested)
         private readonly ConcurrentDictionary<string, (PartCache part, DateTime deleteTime, string oldHash)> pendingDeletions = new();
         private const int DELETION_GRACE_PERIOD_MS = 1000; // 1 second grace period for atomic saves
+
+        // Debouncing: track last event time for each file to prevent duplicate events from FileSystemWatcher
+        // FileSystemWatcher often fires multiple events for a single file operation
+        private readonly ConcurrentDictionary<string, DateTime> lastEventTime = new();
+        private const int DEBOUNCE_MS = 500; // Ignore duplicate events within 500ms
+
+        // Track files currently being processed to prevent duplicate uploads
+        private readonly ConcurrentDictionary<string, bool> filesInUploadQueue = new();
+
+        // Lock for upload operations on same key to prevent race condition duplicates
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> uploadKeyLocks = new();
 
         // Root folder for all synced files
         private const string ROOT_SYNC_FOLDER = "Local Folder Sync";
@@ -326,7 +337,7 @@ namespace PrintagoFolderWatch
                     ? part.name
                     : $"{normalizedFolderPath}/{part.name}";
 
-                remoteParts[partKey] = new PartCache
+                var partCache = new PartCache
                 {
                     Id = part.id,
                     Name = part.name,
@@ -335,12 +346,21 @@ namespace PrintagoFolderWatch
                     FileHash = part.fileHashes?.FirstOrDefault() ?? "",
                     UpdatedAt = part.updatedAt
                 };
+
+                // Add to list (supports duplicates with same key)
+                remoteParts.AddOrUpdate(partKey,
+                    _ => new List<PartCache> { partCache },
+                    (_, list) => { list.Add(partCache); return list; });
             }
 
-            Log($"✓ Built parts cache: {remoteParts.Count} parts", "INFO");
+            // Count total parts including duplicates
+            var totalParts = remoteParts.Values.Sum(list => list.Count);
+            var duplicateKeys = remoteParts.Where(kvp => kvp.Value.Count > 1).Count();
+            Log($"✓ Built parts cache: {totalParts} parts in {remoteParts.Count} unique keys ({duplicateKeys} keys have duplicates)", "INFO");
             foreach (var kvp in remoteParts.Take(5))
             {
-                Log($"  Sample part: Key='{kvp.Key}' | Name='{kvp.Value.Name}' | Folder='{kvp.Value.FolderPath}' | Hash={kvp.Value.FileHash.Substring(0, Math.Min(8, kvp.Value.FileHash.Length))}", "DEBUG");
+                var first = kvp.Value.First();
+                Log($"  Sample part: Key='{kvp.Key}' | Name='{first.Name}' | Folder='{first.FolderPath}' | Hash={first.FileHash.Substring(0, Math.Min(8, first.FileHash.Length))} | Copies={kvp.Value.Count}", "DEBUG");
             }
 
             Log($"========== CACHE COMPLETE ==========", "INFO");
@@ -582,40 +602,73 @@ namespace PrintagoFolderWatch
                 Log("STEP 1: Reconciling with tracking database...", "INFO");
                 int foldersDeleted = await ReconcileWithTrackingDb();
 
-            // STEP 2: Find parts to delete (remote parts not in local files and not tracked)
+            // STEP 2: Find parts to delete (remote parts not in local files, not tracked, OR duplicates)
             Log("STEP 2: Finding remote parts to delete...", "INFO");
-            foreach (var remotePart in remoteParts.Values)
+            foreach (var kvp in remoteParts)
             {
-                var key = string.IsNullOrEmpty(remotePart.FolderPath)
-                    ? remotePart.Name
-                    : $"{remotePart.FolderPath}/{remotePart.Name}";
+                var key = kvp.Key;
+                var partsList = kvp.Value;
 
                 if (!localFiles.ContainsKey(key))
                 {
-                    // Check if this Part is tracked to a different path (file was moved)
-                    var tracked = trackingDb?.GetAll().FirstOrDefault(t => t.PartId == remotePart.Id);
-                    if (tracked == null)
+                    // No local file for this key - delete ALL remote parts with this key
+                    foreach (var remotePart in partsList)
                     {
-                        // Not tracked anywhere, safe to delete
-                        deletions.Add(remotePart);
-                        Log($"  Will delete: {key} (not found locally, not tracked)", "DEBUG");
-                    }
-                    else
-                    {
-                        // Tracked, but verify the file actually exists
-                        if (File.Exists(tracked.FilePath))
+                        // Check if this Part is tracked to a different path (file was moved)
+                        var tracked = trackingDb?.GetAll().FirstOrDefault(t => t.PartId == remotePart.Id);
+                        if (tracked == null)
                         {
-                            Log($"  Skipping deletion of {key} - tracked to {tracked.FilePath}", "DEBUG");
+                            // Not tracked anywhere, safe to delete
+                            deletions.Add(remotePart);
+                            Log($"  Will delete: {key} (ID: {remotePart.Id}) (not found locally, not tracked)", "DEBUG");
                         }
                         else
                         {
-                            // Stale tracking entry - file no longer exists
-                            Log($"  Will delete: {key} (tracked file no longer exists: {tracked.FilePath})", "DEBUG");
-                            deletions.Add(remotePart);
+                            // Tracked, but verify the file actually exists
+                            if (File.Exists(tracked.FilePath))
+                            {
+                                Log($"  Skipping deletion of {key} - tracked to {tracked.FilePath}", "DEBUG");
+                            }
+                            else
+                            {
+                                // Stale tracking entry - file no longer exists
+                                Log($"  Will delete: {key} (ID: {remotePart.Id}) (tracked file no longer exists: {tracked.FilePath})", "DEBUG");
+                                deletions.Add(remotePart);
 
-                            // Clean up stale tracking entry
-                            trackingDb?.Delete(tracked.FilePath);
+                                // Clean up stale tracking entry
+                                trackingDb?.Delete(tracked.FilePath);
+                            }
                         }
+                    }
+                }
+                else if (partsList.Count > 1)
+                {
+                    // Local file exists, but there are DUPLICATE remote parts - keep only the best one
+                    Log($"  Found {partsList.Count} duplicates for: {key}", "INFO");
+
+                    // Get the local file hash to find the best matching part
+                    var localFile = localFiles[key];
+                    string? localHash = null;
+                    try
+                    {
+                        localHash = ComputeFileHash(localFile.FilePath).Result;
+                    }
+                    catch { }
+
+                    // Sort parts: prefer ones with matching hash, then by most recent
+                    var sortedParts = partsList
+                        .OrderByDescending(p => p.FileHash == localHash) // Matching hash first
+                        .ThenByDescending(p => p.UpdatedAt) // Most recent second
+                        .ToList();
+
+                    // Keep the first one, delete the rest
+                    var keepPart = sortedParts.First();
+                    Log($"    Keeping: {keepPart.Id} (hash match: {keepPart.FileHash == localHash}, updated: {keepPart.UpdatedAt})", "DEBUG");
+
+                    foreach (var dupPart in sortedParts.Skip(1))
+                    {
+                        deletions.Add(dupPart);
+                        Log($"    Will delete duplicate: {dupPart.Id} (hash match: {dupPart.FileHash == localHash}, updated: {dupPart.UpdatedAt})", "DEBUG");
                     }
                 }
             }
@@ -635,7 +688,7 @@ namespace PrintagoFolderWatch
                     if (tracked != null && !string.IsNullOrEmpty(tracked.PartId))
                     {
                         // Verify the Part still exists in Printago (check if Part ID is in remoteParts)
-                        bool partExistsInPrintago = remoteParts.Values.Any(p => p.Id == tracked.PartId);
+                        bool partExistsInPrintago = remoteParts.Values.Any(list => list.Any(p => p.Id == tracked.PartId));
 
                         if (partExistsInPrintago)
                         {
@@ -658,8 +711,8 @@ namespace PrintagoFolderWatch
                 }
                 else
                 {
-                    // Check if changed
-                    var remotePart = remoteParts[key];
+                    // Check if changed - use the first (best) part for comparison
+                    var remotePart = remoteParts[key].First();
                     if (await IsFileChanged(localFile, remotePart))
                     {
                         uploads.Add(localFile);
@@ -771,8 +824,9 @@ namespace PrintagoFolderWatch
                     : $"{localFile.FolderPath}/{localFile.PartName}";
 
                 // First try exact key match
-                if (remoteParts.TryGetValue(key, out var remotePart) && remotePart.FileHash == localFile.FileHash)
+                if (remoteParts.TryGetValue(key, out var remotePartsList) && remotePartsList.Any(p => p.FileHash == localFile.FileHash))
                 {
+                    var remotePart = remotePartsList.First(p => p.FileHash == localFile.FileHash);
                     // Check if folder location matches
                     if (remotePart.FolderPath != localFile.FolderPath)
                     {
@@ -809,7 +863,7 @@ namespace PrintagoFolderWatch
 
                 // No exact key match - check if file exists in different folder (match by hash AND name)
                 // Skip Parts without hashes (thumbnail processing not complete)
-                var matchByHash = remoteParts.Values.FirstOrDefault(p =>
+                var matchByHash = remoteParts.Values.SelectMany(list => list).FirstOrDefault(p =>
                     !string.IsNullOrEmpty(p.FileHash) &&
                     !string.IsNullOrEmpty(localFile.FileHash) &&
                     p.FileHash == localFile.FileHash &&
@@ -937,7 +991,7 @@ namespace PrintagoFolderWatch
                 if (response.IsSuccessStatusCode)
                 {
                     // Get the Part name for better logging
-                    var partName = remoteParts.Values.FirstOrDefault(p => p.Id == partId)?.Name ?? partId;
+                    var partName = remoteParts.Values.SelectMany(list => list).FirstOrDefault(p => p.Id == partId)?.Name ?? partId;
                     Log($"✓ MOVED: '{partName}' → '{newFolderPath}' (Part ID: {partId})", "MOVE");
                 }
                 else
@@ -1005,6 +1059,18 @@ namespace PrintagoFolderWatch
             var ext = Path.GetExtension(e.FullPath).ToLower();
             if (ext == ".3mf" || ext == ".stl")
             {
+                // Debounce: ignore duplicate events within DEBOUNCE_MS
+                var now = DateTime.UtcNow;
+                if (lastEventTime.TryGetValue(e.FullPath, out var lastTime))
+                {
+                    if ((now - lastTime).TotalMilliseconds < DEBOUNCE_MS)
+                    {
+                        Log($"Debounced duplicate event for: {Path.GetFileName(e.FullPath)}", "DEBUG");
+                        return;
+                    }
+                }
+                lastEventTime[e.FullPath] = now;
+
                 // Update local cache
                 AddLocalFile(e.FullPath);
 
@@ -1042,7 +1108,7 @@ namespace PrintagoFolderWatch
                     }
 
                     // Also check if Part exists in remote with same hash
-                    var existingByHash = remoteParts.Values.FirstOrDefault(p =>
+                    var existingByHash = remoteParts.Values.SelectMany(list => list).FirstOrDefault(p =>
                         !string.IsNullOrEmpty(p.FileHash) &&
                         p.FileHash == fileHash &&
                         p.Name == partName);
@@ -1074,9 +1140,16 @@ namespace PrintagoFolderWatch
                     // Fall through to queue for upload
                 }
 
-                // Queue for upload (new file or changed file)
-                uploadQueue.Enqueue(e.FullPath);
-                Log($"Detected change: {Path.GetFileName(e.FullPath)}", "INFO");
+                // Queue for upload (new file or changed file) - but only if not already queued
+                if (filesInUploadQueue.TryAdd(e.FullPath, true))
+                {
+                    uploadQueue.Enqueue(e.FullPath);
+                    Log($"Detected change: {Path.GetFileName(e.FullPath)}", "INFO");
+                }
+                else
+                {
+                    Log($"Skipped queueing (already in queue): {Path.GetFileName(e.FullPath)}", "DEBUG");
+                }
             }
         }
 
@@ -1101,8 +1174,9 @@ namespace PrintagoFolderWatch
                 var oldHash = tracked?.FileHash ?? "";
 
                 // Check if this Part exists in remote
-                if (remoteParts.TryGetValue(key, out var remotePart))
+                if (remoteParts.TryGetValue(key, out var remotePartList) && remotePartList.Any())
                 {
+                    var remotePart = remotePartList.First(); // Use the first one for deletion tracking
                     // Don't immediately delete - add to pending deletions with grace period
                     // This handles atomic save operations (delete + create pattern used by Bambu Studio)
                     pendingDeletions[e.FullPath] = (remotePart, DateTime.UtcNow, oldHash);
@@ -1265,6 +1339,8 @@ namespace PrintagoFolderWatch
             finally
             {
                 uploadSemaphore.Release();
+                // Remove from queue tracking so file can be queued again if changed
+                filesInUploadQueue.TryRemove(filePath, out _);
             }
         }
 
@@ -1289,20 +1365,26 @@ namespace PrintagoFolderWatch
 
             activeUploads[filePath] = progress;
 
+            // Build the key early so we can use it for per-key locking
+            var key = string.IsNullOrEmpty(folderPath)
+                ? partName
+                : $"{folderPath}/{partName}";
+
+            // Get or create a lock for this specific key to prevent race conditions
+            var keyLock = uploadKeyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+            await keyLock.WaitAsync();
+
             try
             {
                 var apiUrl = Config.ApiUrl.TrimEnd('/');
 
-                // Check if we need to delete existing part with different hash
-                var key = string.IsNullOrEmpty(folderPath)
-                    ? partName
-                    : $"{folderPath}/{partName}";
-
                 PartCache? existingPart = null;
                 bool isUpdate = false;
 
-                if (remoteParts.TryGetValue(key, out existingPart))
+                // Re-check cache after acquiring lock (another upload may have completed)
+                if (remoteParts.TryGetValue(key, out var existingPartsList) && existingPartsList.Any())
                 {
+                    existingPart = existingPartsList.First(); // Use the first (best) one
                     progress.Status = "Checking for changes...";
                     progress.ProgressPercent = 5;
 
@@ -1380,9 +1462,9 @@ namespace PrintagoFolderWatch
                     {
                         partId = existingPart.Id;
 
-                        // Update cache with new hash
+                        // Update cache with new hash - replace with single-item list
                         var fileHash = await ComputeFileHash(filePath);
-                        remoteParts[key] = new PartCache
+                        remoteParts[key] = new List<PartCache> { new PartCache
                         {
                             Id = partId,
                             Name = partName,
@@ -1390,7 +1472,7 @@ namespace PrintagoFolderWatch
                             FolderPath = folderPath,
                             FileHash = fileHash,
                             UpdatedAt = DateTime.UtcNow
-                        };
+                        } };
 
                         // Update tracking database
                         trackingDb?.Upsert(new FileTrackingEntry
@@ -1449,9 +1531,9 @@ namespace PrintagoFolderWatch
                         var createdPart = JsonConvert.DeserializeAnonymousType(partResponseJson, new { id = "" });
                         partId = createdPart?.id ?? "";
 
-                        // Update cache
+                        // Update cache - replace with single-item list
                         var fileHash = await ComputeFileHash(filePath);
-                        remoteParts[key] = new PartCache
+                        remoteParts[key] = new List<PartCache> { new PartCache
                         {
                             Id = partId,
                             Name = partName,
@@ -1459,7 +1541,7 @@ namespace PrintagoFolderWatch
                             FolderPath = folderPath,
                             FileHash = fileHash,
                             UpdatedAt = DateTime.UtcNow
-                        };
+                        } };
 
                         // Track in database for future reconciliation
                         trackingDb?.Upsert(new FileTrackingEntry
@@ -1495,6 +1577,7 @@ namespace PrintagoFolderWatch
             finally
             {
                 activeUploads.TryRemove(filePath, out _);
+                keyLock.Release();
             }
         }
 
