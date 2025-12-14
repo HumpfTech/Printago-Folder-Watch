@@ -11,9 +11,12 @@ namespace PrintagoFolderWatch
     public class UpdateChecker
     {
         private const string GITHUB_RELEASES_URL = "https://api.github.com/repos/HumpfTech/Printago-Folder-Watch/releases/latest";
-        private const string CURRENT_VERSION = "2.2"; // Update this with each release
+        private const string CURRENT_VERSION = "2.3"; // Update this with each release
 
         private readonly HttpClient httpClient;
+
+        // Event for balloon notification
+        public event Action<string, string>? OnUpdateAvailable;
 
         public UpdateChecker()
         {
@@ -56,6 +59,9 @@ namespace PrintagoFolderWatch
                             }
                         }
                     }
+
+                    // Fire balloon notification event if subscribed
+                    OnUpdateAvailable?.Invoke(latestVersion, $"Click to update to v{latestVersion}");
 
                     ShowUpdateDialog(latestVersion, release.html_url, downloadUrl, release.body);
                 }
