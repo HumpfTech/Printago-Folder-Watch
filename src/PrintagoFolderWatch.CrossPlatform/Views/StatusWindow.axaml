@@ -2,11 +2,11 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PrintagoFolderWatch.CrossPlatform.Views.StatusWindow"
         Title="Printago Folder Watch - Status"
-        Width="450" Height="400"
+        Width="700" Height="600"
         WindowStartupLocation="CenterScreen"
-        CanResize="False">
+        MinWidth="700" MinHeight="550">
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="20">
         <!-- Header -->
         <StackPanel Grid.Row="0" Spacing="5" Margin="0,0,0,15">
             <TextBlock Text="Printago Folder Watch"
@@ -42,16 +42,74 @@
             </Border>
         </Grid>
 
-        <!-- Queue List -->
-        <Border Grid.Row="2" Background="#282828" CornerRadius="8" Padding="10">
-            <ListBox x:Name="QueueList"
-                     Background="Transparent"
-                     Foreground="White"
-                     FontSize="11"/>
+        <!-- Tab Control -->
+        <TabControl Grid.Row="2" x:Name="TabControl">
+            <!-- Currently Uploading Tab -->
+            <TabItem x:Name="UploadingTab" Header="Currently Uploading (0/10)">
+                <Border Background="#282828" CornerRadius="8" Padding="10">
+                    <ScrollViewer>
+                        <StackPanel x:Name="UploadingPanel" Spacing="5"/>
+                    </ScrollViewer>
+                </Border>
+            </TabItem>
+
+            <!-- Upload Queue Tab -->
+            <TabItem x:Name="UploadQueueTab" Header="Upload Queue">
+                <Border Background="#282828" CornerRadius="8" Padding="10">
+                    <ListBox x:Name="UploadQueueList"
+                             Background="Transparent"
+                             Foreground="White"
+                             FontSize="11"
+                             FontFamily="Consolas"/>
+                </Border>
+            </TabItem>
+
+            <!-- Delete Queue Tab -->
+            <TabItem x:Name="DeleteQueueTab" Header="Delete Queue (0)">
+                <Border Background="#282828" CornerRadius="8" Padding="10">
+                    <ListBox x:Name="DeleteQueueList"
+                             Background="Transparent"
+                             Foreground="LightCoral"
+                             FontSize="11"
+                             FontFamily="Consolas"/>
+                </Border>
+            </TabItem>
+
+            <!-- Recent Activity Tab -->
+            <TabItem Header="Recent Activity">
+                <Border Background="#282828" CornerRadius="8" Padding="10">
+                    <ListBox x:Name="ActivityList"
+                             Background="Transparent"
+                             Foreground="LightGreen"
+                             FontSize="11"
+                             FontFamily="Consolas"/>
+                </Border>
+            </TabItem>
+        </TabControl>
+
+        <!-- Logs Path Info -->
+        <Border Grid.Row="3" Background="#202020" CornerRadius="4" Padding="8" Margin="0,10,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="Logs: " Foreground="Gray" FontSize="10" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" x:Name="LogsPathText"
+                           Text=""
+                           Foreground="#888888"
+                           FontSize="10"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"/>
+                <Button Grid.Column="2"
+                        x:Name="OpenLogsButton"
+                        Content="Open Folder"
+                        Click="OpenLogsFolder_Click"
+                        Padding="8,3"
+                        FontSize="10"
+                        Background="#383838"
+                        Margin="5,0,0,0"/>
+            </Grid>
         </Border>
 
         <!-- Buttons -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,15,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,15,0,0">
             <Button x:Name="StartButton" Content="Start" Click="Start_Click" Padding="15,8" Background="#3264AA"/>
             <Button x:Name="StopButton" Content="Stop" Click="Stop_Click" Padding="15,8" IsEnabled="False"/>
             <Button Content="Sync Now" x:Name="SyncNowButton" Click="SyncNow_Click" Padding="15,8" Background="#3264AA" IsEnabled="False"/>

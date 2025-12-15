@@ -1,7 +1,13 @@
 using System;
-using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Threading;
 using PrintagoFolderWatch.Core;
 
@@ -12,6 +18,8 @@ public partial class StatusWindow : Window
     private readonly FileWatcherService _watcherService;
     private bool _isRunning;
     private readonly DispatcherTimer _updateTimer;
+    private readonly string _logsPath;
+    private readonly Dictionary<string, Border> _activeUploadPanels = new();
 
     public event Action? OnSettingsClicked;
     public event Action? OnLogsClicked;
@@ -25,13 +33,21 @@ public partial class StatusWindow : Window
         _watcherService = watcherService;
         _isRunning = isRunning;
 
+        // Set logs path
+        _logsPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PrintagoFolderWatch",
+            "logs"
+        );
+        LogsPathText.Text = _logsPath;
+
         UpdateButtonStates();
         UpdateStatus(_isRunning ? "Running - Watching for changes" : "Stopped");
 
         // Set up timer to update stats
         _updateTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(500)
+            Interval = TimeSpan.FromMilliseconds(300)
         };
         _updateTimer.Tick += UpdateStats;
         _updateTimer.Start();
@@ -45,9 +61,21 @@ public partial class StatusWindow : Window
         FoldersCount.Text = _watcherService.FoldersCreatedCount.ToString();
         SyncedCount.Text = _watcherService.SyncedFilesCount.ToString();
 
-        // Update queue items
-        var items = _watcherService.GetQueueItems();
-        QueueList.ItemsSource = items;
+        // Update upload queue items
+        var queueItems = _watcherService.GetQueueItems();
+        UploadQueueList.ItemsSource = queueItems;
+
+        // Update delete queue items
+        var deleteQueueItems = _watcherService.GetDeleteQueueItems();
+        DeleteQueueList.ItemsSource = deleteQueueItems;
+        DeleteQueueTab.Header = $"Delete Queue ({deleteQueueItems.Count})";
+
+        // Update recent activity
+        var recentLogs = _watcherService.GetRecentLogs(20);
+        ActivityList.ItemsSource = recentLogs;
+
+        // Update active uploads
+        UpdateActiveUploads();
 
         // Update status text based on activity
         if (_isRunning)
@@ -56,14 +84,119 @@ public partial class StatusWindow : Window
             if (activeCount > 0)
             {
                 StatusText.Text = $"Uploading {activeCount} files ({_watcherService.UploadQueueCount} in queue)";
+                StatusText.Foreground = Brushes.Yellow;
             }
             else if (_watcherService.UploadQueueCount > 0)
             {
                 StatusText.Text = $"Processing queue ({_watcherService.UploadQueueCount} files)";
+                StatusText.Foreground = Brushes.LightBlue;
             }
             else
             {
                 StatusText.Text = "All files synced";
+                StatusText.Foreground = Brushes.LightGreen;
+            }
+        }
+    }
+
+    private void UpdateActiveUploads()
+    {
+        var activeUploads = _watcherService.GetActiveUploads();
+        UploadingTab.Header = $"Currently Uploading ({activeUploads.Count}/10)";
+
+        var currentUploads = activeUploads.Select(u => u.FilePath).ToHashSet();
+
+        // Remove panels for completed uploads
+        var panelsToRemove = _activeUploadPanels.Keys.Where(key => !currentUploads.Contains(key)).ToList();
+        foreach (var key in panelsToRemove)
+        {
+            var panel = _activeUploadPanels[key];
+            UploadingPanel.Children.Remove(panel);
+            _activeUploadPanels.Remove(key);
+        }
+
+        // Add or update panels for active uploads
+        foreach (var upload in activeUploads.Take(10))
+        {
+            if (_activeUploadPanels.TryGetValue(upload.FilePath, out var existingPanel))
+            {
+                UpdateUploadPanel(existingPanel, upload);
+            }
+            else
+            {
+                var panel = CreateUploadPanel(upload);
+                UploadingPanel.Children.Add(panel);
+                _activeUploadPanels[upload.FilePath] = panel;
+            }
+        }
+    }
+
+    private Border CreateUploadPanel(Core.Models.UploadProgress upload)
+    {
+        var panel = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(40, 40, 40)),
+            CornerRadius = new Avalonia.CornerRadius(4),
+            Padding = new Avalonia.Thickness(10),
+            Margin = new Avalonia.Thickness(0, 2)
+        };
+
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto")
+        };
+
+        var fileLabel = new TextBlock
+        {
+            Text = upload.RelativePath,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.White,
+            FontSize = 11,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        Grid.SetRow(fileLabel, 0);
+        grid.Children.Add(fileLabel);
+
+        var statusLabel = new TextBlock
+        {
+            Name = "StatusLabel",
+            Text = upload.Status,
+            Foreground = Brushes.LightGray,
+            FontSize = 10,
+            Margin = new Avalonia.Thickness(0, 3, 0, 3)
+        };
+        Grid.SetRow(statusLabel, 1);
+        grid.Children.Add(statusLabel);
+
+        var progressBar = new ProgressBar
+        {
+            Name = "ProgressBar",
+            Minimum = 0,
+            Maximum = 100,
+            Value = Math.Min(upload.ProgressPercent, 100),
+            Height = 8
+        };
+        Grid.SetRow(progressBar, 2);
+        grid.Children.Add(progressBar);
+
+        panel.Child = grid;
+        return panel;
+    }
+
+    private void UpdateUploadPanel(Border panel, Core.Models.UploadProgress upload)
+    {
+        if (panel.Child is Grid grid)
+        {
+            foreach (var child in grid.Children)
+            {
+                if (child is TextBlock tb && tb.Name == "StatusLabel")
+                {
+                    tb.Text = upload.Status;
+                }
+                else if (child is ProgressBar pb && pb.Name == "ProgressBar")
+                {
+                    pb.Value = Math.Min(upload.ProgressPercent, 100);
+                }
             }
         }
     }
@@ -115,5 +248,46 @@ public partial class StatusWindow : Window
     private void Logs_Click(object? sender, RoutedEventArgs e)
     {
         OnLogsClicked?.Invoke();
+    }
+
+    private void OpenLogsFolder_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (Directory.Exists(_logsPath))
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = _logsPath,
+                        UseShellExecute = true
+                    });
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "open",
+                        Arguments = _logsPath,
+                        UseShellExecute = true
+                    });
+                }
+                else
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "xdg-open",
+                        Arguments = _logsPath,
+                        UseShellExecute = true
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to open logs folder: {ex.Message}");
+        }
     }
 }

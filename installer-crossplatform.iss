@@ -2,7 +2,7 @@
 ; Inno Setup Script for Avalonia Application
 
 #define MyAppName "Printago Folder Watch"
-#define MyAppVersion "2.7"
+#define MyAppVersion "2.8"
 #define MyAppPublisher "Humpf Tech LLC"
 #define MyAppExeName "PrintagoFolderWatch.exe"
 
