@@ -2,7 +2,7 @@
 ; Inno Setup Script for .NET Application
 
 #define MyAppName "Printago Folder Watch"
-#define MyAppVersion "2.5"
+#define MyAppVersion "2.6"
 #define MyAppPublisher "Humpf Tech LLC"
 #define MyAppExeName "PrintagoFolderWatch.exe"
 
@@ -37,8 +37,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startupicon"; Description: "Start automatically when Windows starts"; GroupDescription: "Startup:"
 
 [Files]
-; Main application files from Release build
-Source: "bin\Release\net9.0-windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Main application files from Release build (new src structure)
+Source: "src\PrintagoFolderWatch.Windows\bin\Release\net9.0-windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Exclude unnecessary files
 ; Note: SQLite native libraries are included in the bin output
 
