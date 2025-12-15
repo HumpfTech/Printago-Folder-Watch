@@ -6,7 +6,7 @@
         WindowStartupLocation="CenterScreen"
         MinWidth="700" MinHeight="550">
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="20">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20">
         <!-- Header -->
         <StackPanel Grid.Row="0" Spacing="5" Margin="0,0,0,15">
             <TextBlock Text="Printago Folder Watch"
@@ -87,29 +87,8 @@
             </TabItem>
         </TabControl>
 
-        <!-- Logs Path Info -->
-        <Border Grid.Row="3" Background="#202020" CornerRadius="4" Padding="8" Margin="0,10,0,0">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Grid.Column="0" Text="Logs: " Foreground="Gray" FontSize="10" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" x:Name="LogsPathText"
-                           Text=""
-                           Foreground="#888888"
-                           FontSize="10"
-                           TextTrimming="CharacterEllipsis"
-                           VerticalAlignment="Center"/>
-                <Button Grid.Column="2"
-                        x:Name="OpenLogsButton"
-                        Content="Open Folder"
-                        Click="OpenLogsFolder_Click"
-                        Padding="8,3"
-                        FontSize="10"
-                        Background="#383838"
-                        Margin="5,0,0,0"/>
-            </Grid>
-        </Border>
-
         <!-- Buttons -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,15,0,0">
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,15,0,0">
             <Button x:Name="StartButton" Content="Start" Click="Start_Click" Padding="15,8" Background="#3264AA"/>
             <Button x:Name="StopButton" Content="Stop" Click="Stop_Click" Padding="15,8" IsEnabled="False"/>
             <Button Content="Sync Now" x:Name="SyncNowButton" Click="SyncNow_Click" Padding="15,8" Background="#3264AA" IsEnabled="False"/>

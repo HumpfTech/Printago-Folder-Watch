@@ -1,12 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using PrintagoFolderWatch.Core;
@@ -18,7 +14,6 @@ public partial class StatusWindow : Window
     private readonly FileWatcherService _watcherService;
     private bool _isRunning;
     private readonly DispatcherTimer _updateTimer;
-    private readonly string _logsPath;
     private readonly Dictionary<string, Border> _activeUploadPanels = new();
 
     public event Action? OnSettingsClicked;
@@ -32,14 +27,6 @@ public partial class StatusWindow : Window
         InitializeComponent();
         _watcherService = watcherService;
         _isRunning = isRunning;
-
-        // Set logs path
-        _logsPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PrintagoFolderWatch",
-            "logs"
-        );
-        LogsPathText.Text = _logsPath;
 
         UpdateButtonStates();
         UpdateStatus(_isRunning ? "Running - Watching for changes" : "Stopped");
@@ -248,46 +235,5 @@ public partial class StatusWindow : Window
     private void Logs_Click(object? sender, RoutedEventArgs e)
     {
         OnLogsClicked?.Invoke();
-    }
-
-    private void OpenLogsFolder_Click(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            if (Directory.Exists(_logsPath))
-            {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = _logsPath,
-                        UseShellExecute = true
-                    });
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "open",
-                        Arguments = _logsPath,
-                        UseShellExecute = true
-                    });
-                }
-                else
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "xdg-open",
-                        Arguments = _logsPath,
-                        UseShellExecute = true
-                    });
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Failed to open logs folder: {ex.Message}");
-        }
     }
 }

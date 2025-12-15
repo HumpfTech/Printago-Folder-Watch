@@ -13,7 +13,7 @@ namespace PrintagoFolderWatch.CrossPlatform;
 
 public partial class App : Application
 {
-    public const string VERSION = "2.8";
+    public const string VERSION = "2.8.1";
 
     private FileWatcherService? _watcherService;
     private StatusWindow? _statusWindow;
