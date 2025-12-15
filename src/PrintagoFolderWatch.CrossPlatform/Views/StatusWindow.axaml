@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PrintagoFolderWatch.CrossPlatform.Views.StatusWindow"
+        Title="Printago Folder Watch - Status"
+        Width="450" Height="400"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20">
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="5" Margin="0,0,0,15">
+            <TextBlock Text="Printago Folder Watch"
+                       FontSize="20" FontWeight="Bold"
+                       HorizontalAlignment="Center"
+                       Foreground="#64C8FF"/>
+            <TextBlock x:Name="StatusText"
+                       Text="Stopped"
+                       FontSize="12"
+                       HorizontalAlignment="Center"
+                       Foreground="LightGreen"/>
+        </StackPanel>
+
+        <!-- Stats -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*" Margin="0,0,0,15">
+            <Border Grid.Column="0" Background="#282828" CornerRadius="8" Padding="15" Margin="3">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="Queue" FontWeight="Bold" Foreground="Gray" FontSize="11"/>
+                    <TextBlock x:Name="QueueCount" Text="0" FontSize="28" FontWeight="Bold" Foreground="#64C8FF"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Background="#282828" CornerRadius="8" Padding="15" Margin="3">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="Folders" FontWeight="Bold" Foreground="Gray" FontSize="11"/>
+                    <TextBlock x:Name="FoldersCount" Text="0" FontSize="28" FontWeight="Bold" Foreground="#64C8FF"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Background="#282828" CornerRadius="8" Padding="15" Margin="3">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="Synced" FontWeight="Bold" Foreground="Gray" FontSize="11"/>
+                    <TextBlock x:Name="SyncedCount" Text="0" FontSize="28" FontWeight="Bold" Foreground="#64C8FF"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Queue List -->
+        <Border Grid.Row="2" Background="#282828" CornerRadius="8" Padding="10">
+            <ListBox x:Name="QueueList"
+                     Background="Transparent"
+                     Foreground="White"
+                     FontSize="11"/>
+        </Border>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,15,0,0">
+            <Button x:Name="StartButton" Content="Start" Click="Start_Click" Padding="15,8" Background="#3264AA"/>
+            <Button x:Name="StopButton" Content="Stop" Click="Stop_Click" Padding="15,8" IsEnabled="False"/>
+            <Button Content="Sync Now" x:Name="SyncNowButton" Click="SyncNow_Click" Padding="15,8" Background="#3264AA" IsEnabled="False"/>
+            <Button Content="Settings" Click="Settings_Click" Padding="15,8"/>
+            <Button Content="Logs" Click="Logs_Click" Padding="15,8"/>
+        </StackPanel>
+    </Grid>
+</Window>

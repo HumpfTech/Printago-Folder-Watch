@@ -934,6 +934,53 @@ namespace PrintagoFolderWatch.Core
             }
         }
 
+        private async Task UpdatePartNameAndFolder(string partId, string newName, string newFolderPath)
+        {
+            try
+            {
+                var apiUrl = Config.ApiUrl.TrimEnd('/');
+                var newFolderId = await GetOrCreateFolder(newFolderPath);
+
+                if (newFolderId == null)
+                {
+                    Log($"Cannot update Part {partId} - failed to get/create folder", "ERROR");
+                    return;
+                }
+
+                var updateBody = new { name = newName, folderId = newFolderId };
+
+                var request = new HttpRequestMessage(HttpMethod.Patch, $"{apiUrl}/v1/parts/{partId}")
+                {
+                    Content = new StringContent(JsonConvert.SerializeObject(updateBody), Encoding.UTF8, "application/json")
+                };
+                request.Headers.Add("authorization", $"ApiKey {Config.ApiKey}");
+                request.Headers.Add("x-printago-storeid", Config.StoreId);
+
+                var response = await SendApiRequestAsync(request);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    Log($"✓ RENAMED: Part → '{newName}' in '{newFolderPath}'", "RENAME");
+
+                    // Update local cache
+                    var oldPart = remoteParts.Values.SelectMany(list => list).FirstOrDefault(p => p.Id == partId);
+                    if (oldPart != null)
+                    {
+                        oldPart.Name = newName;
+                    }
+                }
+                else
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync();
+                    Log($"Failed to rename Part {partId}: HTTP {response.StatusCode}", "ERROR");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error renaming Part {partId}: {ex.Message}", "ERROR");
+            }
+        }
+
         #endregion
 
         #region File System Events
@@ -1100,19 +1147,78 @@ namespace PrintagoFolderWatch.Core
         {
             if (IsSupportedFile(e.FullPath))
             {
+                // Check if this is an atomic save pattern (e.g., .tmp → .3mf)
+                // In this case, the old file was NOT a supported file, so we should treat
+                // this as a file change (update), not a rename
+                bool isAtomicSave = !IsSupportedFile(e.OldFullPath);
+
+                if (isAtomicSave)
+                {
+                    Log($"Detected atomic save: {e.OldName} → {e.Name}", "INFO");
+                    // Treat as a file change - trigger the normal update path
+                    OnFileChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath) ?? "", Path.GetFileName(e.FullPath)));
+                    return;
+                }
+
                 Log($"Detected rename: {e.OldName} → {e.Name}", "INFO");
 
+                // Get old key info
                 var oldRelativePath = Path.GetRelativePath(Config.WatchPath, e.OldFullPath);
                 var oldFolderPath = Path.GetDirectoryName(oldRelativePath)?.Replace("\\", "/") ?? "";
                 var oldPartName = Path.GetFileNameWithoutExtension(e.OldName);
                 var oldKey = string.IsNullOrEmpty(oldFolderPath)
                     ? oldPartName
                     : $"{oldFolderPath}/{oldPartName}";
-                localFiles.TryRemove(oldKey, out _);
 
+                // Get new key info
+                var newRelativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
+                var newFolderPath = Path.GetDirectoryName(newRelativePath)?.Replace("\\", "/") ?? "";
+                var newPartName = Path.GetFileNameWithoutExtension(e.Name);
+
+                // Update local cache
+                localFiles.TryRemove(oldKey, out _);
                 AddLocalFile(e.FullPath);
 
-                OnFileChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath) ?? "", Path.GetFileName(e.FullPath)));
+                // Update tracking database - look up by NEW path since content hasn't changed
+                var tracked = trackingDb?.GetByPath(e.FullPath) ?? trackingDb?.GetByPath(e.OldFullPath);
+
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(500); // Small delay to avoid file lock issues
+
+                    string? partId = null;
+
+                    if (tracked != null)
+                    {
+                        partId = tracked.PartId;
+                        // Clear old tracking entry
+                        trackingDb?.Delete(e.OldFullPath);
+                    }
+                    else
+                    {
+                        // Not tracked yet, try to find by old key in remote parts
+                        if (remoteParts.TryGetValue(oldKey, out var remotePartList) && remotePartList.Any())
+                        {
+                            partId = remotePartList.First().Id;
+                        }
+                    }
+
+                    if (partId != null)
+                    {
+                        // Re-upload the file with new filename, keeping the same Part ID
+                        // This updates the Part name, folder, AND replaces the file in storage
+                        await ReuploadRenamedFile(e.FullPath, partId, newPartName, newFolderPath);
+                    }
+                    else
+                    {
+                        // File not tracked and not in remote - treat as new file
+                        if (filesInUploadQueue.TryAdd(e.FullPath, true))
+                        {
+                            uploadQueue.Enqueue(e.FullPath);
+                            Log($"Queueing renamed file as new: {e.Name}", "INFO");
+                        }
+                    }
+                });
             }
             else if (Directory.Exists(e.FullPath))
             {
@@ -1123,6 +1229,99 @@ namespace PrintagoFolderWatch.Core
                     await Task.Delay(1000);
                     await TriggerSyncNow();
                 });
+            }
+        }
+
+        /// <summary>
+        /// Re-upload a renamed file to Printago, keeping the same Part ID.
+        /// This updates the Part name, folder, AND replaces the file in cloud storage.
+        /// </summary>
+        private async Task ReuploadRenamedFile(string filePath, string partId, string newPartName, string newFolderPath)
+        {
+            try
+            {
+                var apiUrl = Config.ApiUrl.TrimEnd('/');
+
+                // Build the cloud path for the new file
+                var relativePath = Path.GetRelativePath(Config.WatchPath, filePath);
+                var cloudPath = relativePath.Replace("\\", "/");
+
+                // Get signed upload URL
+                var signedUrlResponse = await GetSignedUploadUrl(apiUrl, cloudPath);
+
+                if (signedUrlResponse == null)
+                {
+                    Log($"Failed to get signed URL for renamed file: {cloudPath}", "ERROR");
+                    return;
+                }
+
+                // Read and upload the file to cloud storage
+                var fileBytes = await File.ReadAllBytesAsync(filePath);
+                var uploadRequest = new HttpRequestMessage(HttpMethod.Put, signedUrlResponse.Value.uploadUrl)
+                {
+                    Content = new ByteArrayContent(fileBytes)
+                };
+
+                var uploadResponse = await httpClient.SendAsync(uploadRequest);
+                if (!uploadResponse.IsSuccessStatusCode)
+                {
+                    Log($"Failed to upload renamed file to storage: {cloudPath}", "ERROR");
+                    return;
+                }
+
+                // Update the Part with new name, folder, and file reference
+                var newFolderId = await GetOrCreateFolder(newFolderPath);
+
+                var updateBody = new
+                {
+                    name = newPartName,
+                    folderId = newFolderId,
+                    fileUris = new[] { signedUrlResponse.Value.storagePath }
+                };
+
+                var request = new HttpRequestMessage(HttpMethod.Patch, $"{apiUrl}/v1/parts/{partId}")
+                {
+                    Content = new StringContent(JsonConvert.SerializeObject(updateBody), Encoding.UTF8, "application/json")
+                };
+                request.Headers.Add("authorization", $"ApiKey {Config.ApiKey}");
+                request.Headers.Add("x-printago-storeid", Config.StoreId);
+
+                var response = await SendApiRequestAsync(request);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    Log($"✓ RENAMED & REUPLOADED: '{newPartName}' (Part ID: {partId})", "RENAME");
+
+                    // Update tracking database
+                    var fileHash = await ComputeFileHash(filePath);
+                    trackingDb?.Upsert(new FileTrackingEntry
+                    {
+                        FilePath = filePath,
+                        FileHash = fileHash,
+                        PartId = partId,
+                        PartName = newPartName,
+                        FolderPath = newFolderPath,
+                        LastSeenAt = DateTime.UtcNow,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    // Update local cache
+                    var oldPart = remoteParts.Values.SelectMany(list => list).FirstOrDefault(p => p.Id == partId);
+                    if (oldPart != null)
+                    {
+                        oldPart.Name = newPartName;
+                        oldPart.FileHash = fileHash;
+                    }
+                }
+                else
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync();
+                    Log($"Failed to update renamed Part {partId}: HTTP {response.StatusCode}", "ERROR");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error re-uploading renamed file: {ex.Message}", "ERROR");
             }
         }
 

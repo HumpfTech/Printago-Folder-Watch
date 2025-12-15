@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PrintagoFolderWatch.CrossPlatform.Views.AboutWindow"
+        Title="About Printago Folder Watch"
+        Width="400" Height="280"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False">
+
+    <Grid Margin="20">
+        <StackPanel Spacing="10">
+            <TextBlock Text="Printago Folder Watch"
+                       FontSize="20" FontWeight="Bold"
+                       Foreground="#64C8FF"/>
+
+            <TextBlock x:Name="VersionText"
+                       FontSize="12"
+                       Foreground="Gray"/>
+
+            <TextBlock Text="Automatically sync your 3D print files (.stl, .3mf, .scad, .step, .stp) to Printago cloud service."
+                       TextWrapping="Wrap"
+                       Margin="0,10,0,0"/>
+
+            <TextBlock x:Name="CopyrightText"
+                       Foreground="Gray"
+                       Margin="0,10,0,0"/>
+
+            <Button x:Name="GitHubLink"
+                    Content="View on GitHub"
+                    Click="GitHub_Click"
+                    Background="Transparent"
+                    Foreground="#64C8FF"
+                    Padding="0"
+                    Margin="0,5,0,0"
+                    HorizontalAlignment="Left"/>
+
+            <Button Content="Close"
+                    Click="Close_Click"
+                    HorizontalAlignment="Right"
+                    Padding="20,8"
+                    Margin="0,20,0,0"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -34,4 +34,9 @@
       <Link>icon.ico</Link>
     </None>
   </ItemGroup>
+
+  <!-- Include icon as Avalonia resource for TrayIcon -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**"/>
+  </ItemGroup>
 </Project>

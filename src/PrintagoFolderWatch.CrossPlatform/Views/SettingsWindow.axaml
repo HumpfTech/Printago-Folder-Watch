@@ -1,0 +1,40 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PrintagoFolderWatch.CrossPlatform.Views.SettingsWindow"
+        Title="Settings"
+        Width="500" Height="350"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20">
+        <StackPanel Grid.Row="0" Spacing="15">
+            <StackPanel Spacing="5">
+                <TextBlock Text="Watch Folder:" FontWeight="Bold"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox x:Name="WatchPathText" Grid.Column="0" Watermark="Path to folder to watch"/>
+                    <Button Grid.Column="1" Content="Browse..." Click="Browse_Click" Margin="5,0,0,0" Padding="10,5"/>
+                </Grid>
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="API URL:" FontWeight="Bold"/>
+                <TextBox x:Name="ApiUrlText" Watermark="https://api.printago.io"/>
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="API Key:" FontWeight="Bold"/>
+                <TextBox x:Name="ApiKeyText" PasswordChar="*" Watermark="Your API key"/>
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="Store ID:" FontWeight="Bold"/>
+                <TextBox x:Name="StoreIdText" Watermark="Your store ID"/>
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0">
+            <Button Content="Cancel" Click="Cancel_Click" Padding="20,8"/>
+            <Button Content="Save" Click="Save_Click" Padding="20,8" Background="#3264AA"/>
+        </StackPanel>
+    </Grid>
+</Window>

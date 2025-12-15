@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 
@@ -37,7 +38,30 @@ namespace PrintagoFolderWatch.Core
                 if (File.Exists(ConfigFile))
                 {
                     var json = File.ReadAllText(ConfigFile);
-                    return JsonConvert.DeserializeObject<Config>(json) ?? new Config();
+                    var settings = new JsonSerializerSettings
+                    {
+                        // Handle both camelCase (old config) and PascalCase (new config)
+                        ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver()
+                    };
+
+                    // Try loading - Newtonsoft.Json handles case-insensitive by default with JsonProperty
+                    var config = JsonConvert.DeserializeObject<Config>(json, settings);
+                    if (config != null)
+                    {
+                        // If still empty, try manual mapping for legacy camelCase format
+                        if (string.IsNullOrEmpty(config.WatchPath))
+                        {
+                            var dict = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+                            if (dict != null)
+                            {
+                                config.WatchPath = dict.GetValueOrDefault("watchPath", dict.GetValueOrDefault("WatchPath", "")) ?? "";
+                                config.ApiUrl = dict.GetValueOrDefault("apiUrl", dict.GetValueOrDefault("ApiUrl", "")) ?? "";
+                                config.ApiKey = dict.GetValueOrDefault("apiKey", dict.GetValueOrDefault("ApiKey", "")) ?? "";
+                                config.StoreId = dict.GetValueOrDefault("storeId", dict.GetValueOrDefault("StoreId", "")) ?? "";
+                            }
+                        }
+                        return config;
+                    }
                 }
             }
             catch (Exception ex)

@@ -12,6 +12,7 @@ namespace PrintagoFolderWatch.Core
     /// </summary>
     public class FileTrackingDb : IDisposable
     {
+        private const int CURRENT_SCHEMA_VERSION = 1;
         private readonly SqliteConnection connection;
         private readonly string dbPath;
 
@@ -28,6 +29,11 @@ namespace PrintagoFolderWatch.Core
             if (needsInit)
             {
                 InitializeDatabase();
+            }
+            else
+            {
+                // Existing database - check and migrate if needed
+                MigrateIfNeeded();
             }
         }
 
@@ -46,9 +52,74 @@ namespace PrintagoFolderWatch.Core
 
                 CREATE INDEX IF NOT EXISTS idx_hash ON file_tracking(file_hash);
                 CREATE INDEX IF NOT EXISTS idx_part ON file_tracking(part_id);
+
+                CREATE TABLE IF NOT EXISTS schema_info (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
             ";
 
             using var command = new SqliteCommand(createTableSql, connection);
+            command.ExecuteNonQuery();
+
+            // Set schema version
+            SetSchemaVersion(CURRENT_SCHEMA_VERSION);
+        }
+
+        private void MigrateIfNeeded()
+        {
+            int currentVersion = GetSchemaVersion();
+
+            // If no schema_info table exists (pre-v2.7 database), create it
+            if (currentVersion == 0)
+            {
+                // Create schema_info table for tracking
+                var createSchemaTable = @"
+                    CREATE TABLE IF NOT EXISTS schema_info (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                ";
+                using var cmd = new SqliteCommand(createSchemaTable, connection);
+                cmd.ExecuteNonQuery();
+
+                // Database from v2.6 or earlier - schema is compatible, just mark version
+                SetSchemaVersion(CURRENT_SCHEMA_VERSION);
+                System.Diagnostics.Debug.WriteLine("Migrated database from pre-v2.7 (added schema tracking)");
+            }
+
+            // Future migrations would go here:
+            // if (currentVersion < 2) { MigrateToV2(); }
+            // if (currentVersion < 3) { MigrateToV3(); }
+        }
+
+        private int GetSchemaVersion()
+        {
+            try
+            {
+                // Check if schema_info table exists
+                var checkTable = "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_info'";
+                using var checkCmd = new SqliteCommand(checkTable, connection);
+                var result = checkCmd.ExecuteScalar();
+                if (result == null)
+                    return 0; // No schema tracking = old database
+
+                var sql = "SELECT value FROM schema_info WHERE key = 'schema_version'";
+                using var command = new SqliteCommand(sql, connection);
+                var value = command.ExecuteScalar();
+                return value != null ? int.Parse(value.ToString()!) : 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private void SetSchemaVersion(int version)
+        {
+            var sql = "INSERT OR REPLACE INTO schema_info (key, value) VALUES ('schema_version', @version)";
+            using var command = new SqliteCommand(sql, connection);
+            command.Parameters.AddWithValue("@version", version.ToString());
             command.ExecuteNonQuery();
         }
 
