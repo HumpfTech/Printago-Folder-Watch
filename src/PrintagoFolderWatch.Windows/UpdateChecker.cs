@@ -173,15 +173,17 @@ namespace PrintagoFolderWatch.Windows
 
                 var progressBar = new ProgressBar
                 {
-                    Style = ProgressBarStyle.Marquee,
+                    Style = ProgressBarStyle.Continuous,
                     Dock = DockStyle.Top,
                     Height = 30,
-                    Margin = new Padding(10)
+                    Margin = new Padding(10),
+                    Minimum = 0,
+                    Maximum = 100
                 };
 
                 var label = new Label
                 {
-                    Text = "Downloading update, please wait...",
+                    Text = "Starting download...",
                     Dock = DockStyle.Fill,
                     TextAlign = System.Drawing.ContentAlignment.MiddleCenter
                 };
@@ -190,11 +192,41 @@ namespace PrintagoFolderWatch.Windows
                 progressForm.Controls.Add(progressBar);
                 progressForm.Show();
 
-                var response = await httpClient.GetAsync(downloadUrl);
+                // Use streaming download with progress
+                using var response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
 
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                await File.WriteAllBytesAsync(tempPath, bytes);
+                var totalBytes = response.Content.Headers.ContentLength ?? -1;
+                var totalMB = totalBytes > 0 ? totalBytes / 1024.0 / 1024.0 : 0;
+
+                using var contentStream = await response.Content.ReadAsStreamAsync();
+                using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+                var buffer = new byte[8192];
+                long totalRead = 0;
+                int bytesRead;
+
+                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer, 0, bytesRead);
+                    totalRead += bytesRead;
+
+                    // Update UI on main thread
+                    progressForm.Invoke(() =>
+                    {
+                        var readMB = totalRead / 1024.0 / 1024.0;
+                        if (totalBytes > 0)
+                        {
+                            var percent = (int)((double)totalRead / totalBytes * 100);
+                            progressBar.Value = percent;
+                            label.Text = $"Downloading... {readMB:F1} / {totalMB:F1} MB ({percent}%)";
+                        }
+                        else
+                        {
+                            label.Text = $"Downloading... {readMB:F1} MB";
+                        }
+                    });
+                }
 
                 progressForm.Close();
 
