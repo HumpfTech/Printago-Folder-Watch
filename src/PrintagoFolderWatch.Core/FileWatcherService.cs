@@ -524,8 +524,8 @@ namespace PrintagoFolderWatch.Core
                 var fileInfo = new FileInfo(filePath);
                 var relativePath = Path.GetRelativePath(Config.WatchPath, filePath);
                 var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-                // Use full filename WITH extension as PartName to distinguish between file.stl and file.3mf
-                var partName = fileInfo.Name;
+                // PartName is WITHOUT extension (for Printago API)
+                var partName = Path.GetFileNameWithoutExtension(fileInfo.Name);
 
                 var localFile = new LocalFileInfo
                 {
@@ -539,10 +539,10 @@ namespace PrintagoFolderWatch.Core
                     FileHash = ""
                 };
 
-                // Use filename WITH extension as key to distinguish between file.stl and file.3mf
+                // Use filename WITH extension as cache key to distinguish file.stl from file.3mf
                 var key = string.IsNullOrEmpty(folderPath)
-                    ? partName
-                    : $"{folderPath}/{partName}";
+                    ? fileInfo.Name
+                    : $"{folderPath}/{fileInfo.Name}";
 
                 localFiles[key] = localFile;
             }
@@ -1019,8 +1019,8 @@ namespace PrintagoFolderWatch.Core
                     var fileInfo = new FileInfo(e.FullPath);
                     var relativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
                     var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-                    // Use full filename WITH extension as PartName
-                    var partName = fileInfo.Name;
+                    // PartName is WITHOUT extension (for Printago API)
+                    var partName = Path.GetFileNameWithoutExtension(fileInfo.Name);
                     var fileHash = await ComputeFileHash(e.FullPath);
 
                     var tracked = trackingDb?.GetByHash(fileHash);
@@ -1086,12 +1086,12 @@ namespace PrintagoFolderWatch.Core
             {
                 var relativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
                 var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-                // Use full filename WITH extension as PartName
-                var partName = e.Name ?? Path.GetFileName(e.FullPath);
+                // Use full filename WITH extension for cache key lookup
+                var fileName = e.Name ?? Path.GetFileName(e.FullPath);
 
                 var key = string.IsNullOrEmpty(folderPath)
-                    ? partName
-                    : $"{folderPath}/{partName}";
+                    ? fileName
+                    : $"{folderPath}/{fileName}";
 
                 localFiles.TryRemove(key, out _);
 
@@ -1166,18 +1166,20 @@ namespace PrintagoFolderWatch.Core
 
                 Log($"Detected rename: {e.OldName} → {e.Name}", "INFO");
 
-                // Get old key info - use full filename WITH extension
+                // Get old key info - use full filename WITH extension for cache key
                 var oldRelativePath = Path.GetRelativePath(Config.WatchPath, e.OldFullPath);
                 var oldFolderPath = Path.GetDirectoryName(oldRelativePath)?.Replace("\\", "/") ?? "";
-                var oldPartName = e.OldName ?? Path.GetFileName(e.OldFullPath);
+                var oldFileName = e.OldName ?? Path.GetFileName(e.OldFullPath);
                 var oldKey = string.IsNullOrEmpty(oldFolderPath)
-                    ? oldPartName
-                    : $"{oldFolderPath}/{oldPartName}";
+                    ? oldFileName
+                    : $"{oldFolderPath}/{oldFileName}";
 
-                // Get new key info - use full filename WITH extension
+                // Get new key info - use full filename WITH extension for cache key
                 var newRelativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
                 var newFolderPath = Path.GetDirectoryName(newRelativePath)?.Replace("\\", "/") ?? "";
-                var newPartName = e.Name ?? Path.GetFileName(e.FullPath);
+                var newFileName = e.Name ?? Path.GetFileName(e.FullPath);
+                // Part name for Printago API should NOT have extension
+                var newPartName = Path.GetFileNameWithoutExtension(newFileName);
 
                 // Update local cache
                 localFiles.TryRemove(oldKey, out _);
@@ -1387,8 +1389,8 @@ namespace PrintagoFolderWatch.Core
             var relativePath = Path.GetRelativePath(Config.WatchPath, filePath);
             var fileName = Path.GetFileName(filePath);
             var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-            // Use full filename WITH extension as PartName to distinguish between file.stl and file.3mf
-            var partName = fileName;
+            // Part name for Printago API should NOT have extension
+            var partName = Path.GetFileNameWithoutExtension(fileName);
             var fileExt = Path.GetExtension(filePath).ToLower();
 
             var progress = new UploadProgress
@@ -1404,10 +1406,10 @@ namespace PrintagoFolderWatch.Core
 
             activeUploads[filePath] = progress;
 
-            // Use full filename WITH extension as key
+            // Use full filename WITH extension as cache key to distinguish file.stl from file.3mf
             var key = string.IsNullOrEmpty(folderPath)
-                ? partName
-                : $"{folderPath}/{partName}";
+                ? fileName
+                : $"{folderPath}/{fileName}";
 
             var keyLock = uploadKeyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
             await keyLock.WaitAsync();
