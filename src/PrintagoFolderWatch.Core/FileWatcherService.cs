@@ -524,7 +524,8 @@ namespace PrintagoFolderWatch.Core
                 var fileInfo = new FileInfo(filePath);
                 var relativePath = Path.GetRelativePath(Config.WatchPath, filePath);
                 var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-                var partName = Path.GetFileNameWithoutExtension(fileInfo.Name);
+                // Use full filename WITH extension as PartName to distinguish between file.stl and file.3mf
+                var partName = fileInfo.Name;
 
                 var localFile = new LocalFileInfo
                 {
@@ -538,6 +539,7 @@ namespace PrintagoFolderWatch.Core
                     FileHash = ""
                 };
 
+                // Use filename WITH extension as key to distinguish between file.stl and file.3mf
                 var key = string.IsNullOrEmpty(folderPath)
                     ? partName
                     : $"{folderPath}/{partName}";
@@ -1017,7 +1019,8 @@ namespace PrintagoFolderWatch.Core
                     var fileInfo = new FileInfo(e.FullPath);
                     var relativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
                     var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-                    var partName = Path.GetFileNameWithoutExtension(fileInfo.Name);
+                    // Use full filename WITH extension as PartName
+                    var partName = fileInfo.Name;
                     var fileHash = await ComputeFileHash(e.FullPath);
 
                     var tracked = trackingDb?.GetByHash(fileHash);
@@ -1083,7 +1086,8 @@ namespace PrintagoFolderWatch.Core
             {
                 var relativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
                 var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-                var partName = Path.GetFileNameWithoutExtension(e.Name);
+                // Use full filename WITH extension as PartName
+                var partName = e.Name ?? Path.GetFileName(e.FullPath);
 
                 var key = string.IsNullOrEmpty(folderPath)
                     ? partName
@@ -1162,18 +1166,18 @@ namespace PrintagoFolderWatch.Core
 
                 Log($"Detected rename: {e.OldName} → {e.Name}", "INFO");
 
-                // Get old key info
+                // Get old key info - use full filename WITH extension
                 var oldRelativePath = Path.GetRelativePath(Config.WatchPath, e.OldFullPath);
                 var oldFolderPath = Path.GetDirectoryName(oldRelativePath)?.Replace("\\", "/") ?? "";
-                var oldPartName = Path.GetFileNameWithoutExtension(e.OldName);
+                var oldPartName = e.OldName ?? Path.GetFileName(e.OldFullPath);
                 var oldKey = string.IsNullOrEmpty(oldFolderPath)
                     ? oldPartName
                     : $"{oldFolderPath}/{oldPartName}";
 
-                // Get new key info
+                // Get new key info - use full filename WITH extension
                 var newRelativePath = Path.GetRelativePath(Config.WatchPath, e.FullPath);
                 var newFolderPath = Path.GetDirectoryName(newRelativePath)?.Replace("\\", "/") ?? "";
-                var newPartName = Path.GetFileNameWithoutExtension(e.Name);
+                var newPartName = e.Name ?? Path.GetFileName(e.FullPath);
 
                 // Update local cache
                 localFiles.TryRemove(oldKey, out _);
@@ -1383,7 +1387,8 @@ namespace PrintagoFolderWatch.Core
             var relativePath = Path.GetRelativePath(Config.WatchPath, filePath);
             var fileName = Path.GetFileName(filePath);
             var folderPath = Path.GetDirectoryName(relativePath)?.Replace("\\", "/") ?? "";
-            var partName = Path.GetFileNameWithoutExtension(fileName);
+            // Use full filename WITH extension as PartName to distinguish between file.stl and file.3mf
+            var partName = fileName;
             var fileExt = Path.GetExtension(filePath).ToLower();
 
             var progress = new UploadProgress
@@ -1399,6 +1404,7 @@ namespace PrintagoFolderWatch.Core
 
             activeUploads[filePath] = progress;
 
+            // Use full filename WITH extension as key
             var key = string.IsNullOrEmpty(folderPath)
                 ? partName
                 : $"{folderPath}/{partName}";
