@@ -345,9 +345,13 @@ namespace PrintagoFolderWatch
                     normalizedFolderPath = "";
                 }
 
+                // Include file extension in key to distinguish file.stl from file.3mf
+                var partNameWithExt = string.IsNullOrEmpty(part.type) 
+                    ? part.name 
+                    : $"{part.name}.{part.type}";
                 var partKey = string.IsNullOrEmpty(normalizedFolderPath)
-                    ? part.name
-                    : $"{normalizedFolderPath}/{part.name}";
+                    ? partNameWithExt
+                    : $"{normalizedFolderPath}/{partNameWithExt}";
 
                 var partCache = new PartCache
                 {
