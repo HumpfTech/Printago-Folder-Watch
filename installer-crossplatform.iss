@@ -2,7 +2,7 @@
 ; Inno Setup Script for Avalonia Application
 
 #define MyAppName "Printago Folder Watch"
-#define MyAppVersion "2.8.5"
+#define MyAppVersion "2.9.2"
 #define MyAppPublisher "Humpf Tech LLC"
 #define MyAppExeName "PrintagoFolderWatch.exe"
 
@@ -49,12 +49,30 @@ Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: st
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall shellexec skipifsilent
 
 [Code]
+// Kill any running instances of the app
+procedure KillRunningInstances();
+var
+  ResultCode: Integer;
+  Retries: Integer;
+begin
+  // Try to kill the app multiple times to ensure it's stopped
+  for Retries := 1 to 3 do
+  begin
+    Exec('taskkill', '/F /IM PrintagoFolderWatch.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Sleep(500);
+  end;
+  // Final wait to ensure processes are fully terminated
+  Sleep(1000);
+end;
+
 function InitializeSetup(): Boolean;
 var
   Version: String;
-  ResultCode: Integer;
 begin
   Result := True;
+
+  // Always kill running instances first - this ensures clean upgrade
+  KillRunningInstances();
 
   // Check if already installed
   if RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F4C3D2E-9B7A-4F1C-8E3D-5A6B7C8D9E0F}_is1', 'DisplayVersion', Version) then
@@ -78,19 +96,22 @@ begin
         Exit;
       end;
     end;
-
-    // Close running instance before upgrade
-    Exec('taskkill', '/F /IM PrintagoFolderWatch.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(1000);
   end;
 end;
 
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var
-  ResultCode: Integer;
+// This runs right before files are installed - kill the app again to be sure
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  if CurUninstallStep = usPostUninstall then
+  Result := '';
+  NeedsRestart := False;
+  KillRunningInstances();
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
   begin
-    Exec('taskkill', '/F /IM PrintagoFolderWatch.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // Kill before uninstall starts
+    KillRunningInstances();
   end;
 end;
