@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -325,13 +324,9 @@ namespace PrintagoFolderWatch.Core
                     normalizedFolderPath = "";
                 }
 
-                // Include file extension in key to distinguish file.stl from file.3mf
-                var partNameWithExt = string.IsNullOrEmpty(part.type)
-                    ? part.name
-                    : $"{part.name}.{part.type}";
                 var partKey = string.IsNullOrEmpty(normalizedFolderPath)
-                    ? partNameWithExt
-                    : $"{normalizedFolderPath}/{partNameWithExt}";
+                    ? part.name
+                    : $"{normalizedFolderPath}/{part.name}";
 
                 var partCache = new PartCache
                 {
@@ -618,7 +613,7 @@ namespace PrintagoFolderWatch.Core
                         string? localHash = null;
                         try
                         {
-                            localHash = await ComputeFileHash(localFile.FilePath);
+                            localHash = ComputeFileHash(localFile.FilePath).Result;
                         }
                         catch { }
 
@@ -938,48 +933,6 @@ namespace PrintagoFolderWatch.Core
             {
                 Log($"Error updating Part {partId} file: {ex.Message}", "ERROR");
                 return false;
-            }
-        }
-
-        /// <summary>
-        /// Fix the fileUri encoding for a Part by updating it with a decoded path.
-        /// Printago transforms uploads:storeId/randomId/encoded%20filename to storeId/parts/partId/encoded%20filename.
-        /// We need to PATCH it with the decoded filename so the UI shows clean names instead of %20, %2B, etc.
-        /// </summary>
-        private async Task FixPartFileUri(string apiUrl, string partId, string relativePath)
-        {
-            try
-            {
-                // Construct the final path format that Printago uses: storeId/parts/partId/filename
-                // The filename should be decoded (spaces, not %20)
-                var filename = relativePath.Replace("\\", "/");
-                var decodedFileUri = $"{Config.StoreId}/parts/{partId}/{filename}";
-
-                var updateBody = new { fileUris = new[] { decodedFileUri } };
-
-                var request = new HttpRequestMessage(HttpMethod.Patch, $"{apiUrl}/v1/parts/{partId}")
-                {
-                    Content = new StringContent(JsonConvert.SerializeObject(updateBody), Encoding.UTF8, "application/json")
-                };
-                request.Headers.Add("authorization", $"ApiKey {Config.ApiKey}");
-                request.Headers.Add("x-printago-storeid", Config.StoreId);
-
-                var response = await SendApiRequestAsync(request);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    Log($"Fixed fileUri encoding for Part {partId}", "DEBUG");
-                }
-                else
-                {
-                    // Non-critical - log but don't fail the upload
-                    Log($"Could not fix fileUri encoding for Part {partId}: HTTP {response.StatusCode}", "WARN");
-                }
-            }
-            catch (Exception ex)
-            {
-                // Non-critical - log but don't fail the upload
-                Log($"Error fixing fileUri encoding for Part {partId}: {ex.Message}", "WARN");
             }
         }
 
@@ -1345,9 +1298,6 @@ namespace PrintagoFolderWatch.Core
                 {
                     Log($"✓ RENAMED & REUPLOADED: '{newPartName}' (Part ID: {partId})", "RENAME");
 
-                    // Fix the fileUri encoding so the UI shows clean names
-                    await FixPartFileUri(apiUrl, partId, relativePath);
-
                     // Update tracking database
                     var fileHash = await ComputeFileHash(filePath);
                     trackingDb?.Upsert(new FileTrackingEntry
@@ -1545,9 +1495,6 @@ namespace PrintagoFolderWatch.Core
                     {
                         partId = existingPart.Id;
 
-                        // Fix the fileUri encoding so the UI shows clean names
-                        await FixPartFileUri(apiUrl, partId, relativePath);
-
                         var fileHash = await ComputeFileHash(filePath);
                         remoteParts[key] = new List<PartCache> { new PartCache
                         {
@@ -1612,10 +1559,6 @@ namespace PrintagoFolderWatch.Core
                         var partResponseJson = await partResponse.Content.ReadAsStringAsync();
                         var createdPart = JsonConvert.DeserializeAnonymousType(partResponseJson, new { id = "" });
                         partId = createdPart?.id ?? "";
-
-                        // Fix the fileUri encoding - Printago transforms the path to storeId/parts/partId/filename
-                        // We need to update it with the decoded filename so the UI shows clean names
-                        await FixPartFileUri(apiUrl, partId, relativePath);
 
                         var fileHash = await ComputeFileHash(filePath);
                         remoteParts[key] = new List<PartCache> { new PartCache
