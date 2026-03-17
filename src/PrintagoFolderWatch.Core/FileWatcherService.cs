@@ -700,7 +700,7 @@ namespace PrintagoFolderWatch.Core
                 return 0;
 
             Log("Reconciling files with tracking database...", "INFO");
-            int matched = 0, updated = 0;
+            int matched = 0, updated = 0, moved = 0;
 
             foreach (var localFile in localFiles.Values)
             {
@@ -719,6 +719,37 @@ namespace PrintagoFolderWatch.Core
                         trackingDb.UpdateHash(localFile.FilePath, localFile.FileHash);
                         updated++;
                     }
+
+                    // Check if the Part's folder in Printago matches the current local folder
+                    if (!string.IsNullOrEmpty(trackedByPath.PartId))
+                    {
+                        var remotePart = remoteParts.Values.SelectMany(list => list)
+                            .FirstOrDefault(p => p.Id == trackedByPath.PartId);
+                        if (remotePart != null && remotePart.FolderPath != localFile.FolderPath)
+                        {
+                            Log($"Folder mismatch for '{localFile.PartName}': '{remotePart.FolderPath}' → '{localFile.FolderPath}'", "INFO");
+                            try
+                            {
+                                await UpdatePartFolder(trackedByPath.PartId, localFile.FolderPath);
+                                trackingDb.Upsert(new FileTrackingEntry
+                                {
+                                    FilePath = localFile.FilePath,
+                                    FileHash = localFile.FileHash ?? trackedByPath.FileHash,
+                                    PartId = trackedByPath.PartId,
+                                    PartName = localFile.PartName,
+                                    FolderPath = localFile.FolderPath,
+                                    LastSeenAt = DateTime.UtcNow,
+                                    CreatedAt = DateTime.UtcNow
+                                });
+                                moved++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Failed to move Part folder: {ex.Message}", "ERROR");
+                            }
+                        }
+                    }
+
                     continue;
                 }
 
@@ -805,7 +836,7 @@ namespace PrintagoFolderWatch.Core
                 }
             }
 
-            Log($"Reconciliation complete: {matched} matches, {updated} updates", "INFO");
+            Log($"Reconciliation complete: {moved} moves, {updated} updates, {matched} matched to remote", "INFO");
 
             int foldersDeleted = await CleanupEmptyFolders();
             return foldersDeleted;
